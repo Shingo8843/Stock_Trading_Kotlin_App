@@ -133,6 +133,20 @@ data class NewsArticle(
     val description: String="",
     val url: String = ""
 )
+const val numberOfAllData = 6
+data class TabIcon(val iconResId: Int, val contentDescription: String)
+data class Stats(var open: Double = 0.00, var high: Double = 0.00, var low: Double = 0.00, var prev: Double = 0.00)
+data class About(var IPO: String = "", var  industry: String = "", var website: String = "", var name: String = "", var peers: List<String> = listOf(""))
+data class SocialSentiments(var totalMSPR: Double = 0.00, var posMSPR: Double = 0.00, var negMSPR : Double = 0.00, var totalChange: Double = 0.00, var posChange: Double = 0.00, var negChange: Double = 0.00)
+data class ResultPortfolio(
+    var ticker: String = "",
+    var sharesOwned: Int = 0,
+    var avgCostPerShare: Double = 0.00,
+    var totalCost: Double = 0.00,
+    var change: Double = 0.00,
+    var marketValue: Double = 0.00,
+    var name: String = ""
+)
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -182,7 +196,7 @@ fun MyApp(){
     var today by remember {
         mutableStateOf(LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM yyyy")))
     }
-    var favorites by remember {
+    var favorites = remember {
         mutableStateOf(
             listOf(
                 FavoriteItem(ticker = "AAPL", name = "Apple Inc.", current = 150.00, change = -1.5, changeP=0.71),
@@ -213,7 +227,7 @@ fun MyApp(){
         val watchlistUrl = "${URL}watchlist/GET"
         val portfolioUrl = "${URL}portfolio/GET"
         val quoteUrl = "${URL}quote/"
-        currentWalletBalance.value = WalletBalance()
+        val newWalletBalance = WalletBalance()
         val allTickers = mutableListOf<String>()
         fun updateLoadingState() {
             if (watchlistReceived && portfolioReceived) {
@@ -230,7 +244,7 @@ fun MyApp(){
                                     changeP = changePercentage
                                 ) else it
                             }
-                            favorites = favorites.map {
+                            favorites.value = favorites.value.map {
                                 if (it.ticker == ticker) it.copy(
                                     current = currentPrice,
                                     change = change,
@@ -259,10 +273,11 @@ fun MyApp(){
                         changeP = 0.0
                     ))
                     allTickers += item.getString("ticker")
-                    currentWalletBalance.value.netWorth += item.getDouble("avgshare") * item.getInt("quantity")
-                    currentWalletBalance.value.cashBalance -= item.getDouble("avgshare") * item.getInt("quantity")
+                    newWalletBalance.netWorth += item.getDouble("avgshare") * item.getInt("quantity")
+                    newWalletBalance.cashBalance -= item.getDouble("avgshare") * item.getInt("quantity")
                 }
                 portfolioItems = portfolioList
+                currentWalletBalance.value = newWalletBalance
                 portfolioReceived = true
                 updateLoadingState()
             },
@@ -285,7 +300,7 @@ fun MyApp(){
                     ))
                     allTickers += item.getString("ticker")
                 }
-                favorites = watchlist
+                favorites.value = watchlist
                 watchlistReceived = true
                 updateLoadingState()
             },
@@ -301,16 +316,15 @@ fun MyApp(){
         updater()
         println("Home Periodic update triggered")
     })
-    LaunchedEffect(Unit) {
+    LaunchedEffect(query.value) {
         updater()
     }
     if (showSearchResult.value){
-        Log.i("Favorite", "Query is in Favorite: ${favorites.any { it.ticker.equals(query.value, ignoreCase = true)}}")
+        Log.i("Favorite", "Query is in Favorite: ${favorites.value.any { it.ticker.equals(query.value, ignoreCase = true)}}")
         loading.value = false
         Column {
-            Header(fav = favorites.any { it.ticker.equals(query.value, ignoreCase = true)}, searchKey=query, showSearchResult=showSearchResult, loading=loading, quote = tickerInfo)
-            ResultScreen( searchKey = query, currentWalletBalance=currentWalletBalance)
-
+            Header(fav = favorites.value.any { it.ticker.equals(query.value, ignoreCase = true)}, searchKey=query, showSearchResult=showSearchResult, loading=loading, quote = tickerInfo, favorites = favorites)
+            ResultScreen( searchKey = query, currentWalletBalance=currentWalletBalance, tickerInfo = tickerInfo)
         }
     }
     else{
@@ -338,16 +352,19 @@ fun MyApp(){
                 LazyColumn {
                     items(items = portfolioItems){
                             item -> FavoriteCard(
-                        leftTop = item.ticker,
-                        rightTop = "$" + String.format("%.2f",item.totalCost),
-                        leftBottom = item.share.toString() + " shares",
-                        rightBottom = "$" + item.change.toString() + "(" + String.format("%.2f", item.changeP) + "%)"
-                    ){
+                                leftTop = item.ticker,
+                                rightTop = "$" + String.format("%.2f",item.totalCost),
+                                leftBottom = item.share.toString() + " shares",
+                                rightBottom = "$" + item.change.toString() + "(" + String.format("%.2f", item.changeP) + "%)",
+                                up = item.change > 0
+                    )
+                    {
                                 ticker ->
                             query.value = ticker
                             showSearchResult.value = true
                     }
                     }
+
                 }
                 Box(modifier = Modifier.background(color= Color(200,200,200))) {
                     Text(
@@ -357,7 +374,7 @@ fun MyApp(){
                             .padding(5.dp)
                     )
                 }
-                FavoritesList(favorites = favorites, query = query, showSearchResult = showSearchResult)
+                FavoritesList(favorites = favorites, query = query, showSearchResult = showSearchResult, context = context)
                 Footer()
             }
         }
@@ -365,14 +382,15 @@ fun MyApp(){
 }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FavoritesList(favorites: List<FavoriteItem>, query: MutableState<String>, showSearchResult: MutableState<Boolean>) {
+fun FavoritesList(favorites: MutableState<List<FavoriteItem>>, query: MutableState<String>, showSearchResult: MutableState<Boolean>, context: Context) {
+    Log.d("Favorites", "Current favorites count: ${favorites.value.size}")
     LazyColumn {
-        items(items = favorites) { item ->
-            val dismissState = rememberDismissState(
-                confirmValueChange = { dismissValue ->
+        items(items = favorites.value, key = {it.ticker}) { item ->
+            var dismissState = rememberDismissState(
+
+                confirmValueChange = {  dismissValue ->
                     if (dismissValue == DismissValue.DismissedToStart ) {
-                        // Perform the action when the card is dismissed like removing from favorites
-                        // Remember to update your list accordingly
+                        onDeleteFavorite(item.ticker, context, favorites)
                     }
                     true
                 }
@@ -387,19 +405,46 @@ fun FavoritesList(favorites: List<FavoriteItem>, query: MutableState<String>, sh
                         rightTop = "$${String.format("%.2f", item.current)}",
                         leftBottom = item.name,
                         rightBottom = "$${item.change} (${String.format("%.2f", item.changeP)}%)",
+                        up =  item.change > 0
                     ){ ticker ->
                         query.value = ticker
                         showSearchResult.value = true
                     }
                 }
             )
-            if (dismissState.isDismissed(DismissDirection.EndToStart) ) {
-                // If you want to do something when the dismiss is completed, such as updating the UI
-            }
+            Divider(color = Color.Gray, thickness = 1.dp)
         }
     }
 }
+fun onDeleteFavorite(ticker: String, context: Context, favorites: MutableState<List<FavoriteItem>>){
+    val queue: RequestQueue = Volley.newRequestQueue(context)
+    val url = "${URL}watchlist/DELETE/$ticker"
 
+    val item = favorites.value.find { it.ticker == ticker }
+
+    favorites.value = ArrayList(favorites.value).apply {
+        removeAll { it.ticker == ticker }
+    }
+
+    val jsonObjectRequest = JsonObjectRequest(
+        Request.Method.DELETE, url, null,
+        { response ->
+            Log.i("Favorite", "$ticker has been removed from the watchlist")
+            // Item successfully removed from backend, no further action needed
+        },
+        { error ->
+            if (item != null) {
+                val newList = favorites.value.toMutableList().apply {
+                    add(item)
+                }
+                favorites.value = newList
+            }
+            error.printStackTrace()
+            // Optionally, you can notify the UI/user about the error.
+        }
+    )
+    queue.add(jsonObjectRequest)
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Background(dismissState: DismissState) {
@@ -438,22 +483,8 @@ fun ComposeWebView(html: String) {
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
     })
 }
-const val numberOfAllData = 6
-data class TabIcon(val iconResId: Int, val contentDescription: String)
-data class Stats(var open: Double = 0.00, var high: Double = 0.00, var low: Double = 0.00, var prev: Double = 0.00)
-data class About(var IPO: String = "", var  industry: String = "", var website: String = "", var name: String = "", var peers: List<String> = listOf(""))
-data class SocialSentiments(var totalMSPR: Double = 0.00, var posMSPR: Double = 0.00, var negMSPR : Double = 0.00, var totalChange: Double = 0.00, var posChange: Double = 0.00, var negChange: Double = 0.00)
-data class ResultPortfolio(
-    var ticker: String = "",
-    var sharesOwned: Int = 0,
-    var avgCostPerShare: Double = 0.00,
-    var totalCost: Double = 0.00,
-    var change: Double = 0.00,
-    var marketValue: Double = 0.00,
-    var name: String = ""
-)
 @Composable
-fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableState<WalletBalance>) {
+fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableState<WalletBalance>, tickerInfo: MutableState<TickerInfo>) {
     val context = LocalContext.current
     val queue = Volley.newRequestQueue(context)
     val coroutineScope = rememberCoroutineScope()
@@ -1084,24 +1115,25 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
             ""
         )
     }
-    fun BuyStock(portfolioItem: MutableState<ResultPortfolio>, ticker: String, number: Int, currentWalletBalance: MutableState<WalletBalance>) {
+    fun buyStock(portfolioItem: MutableState<ResultPortfolio>, ticker: String, number: Int, currentWalletBalance: MutableState<WalletBalance>) {
         coroutineScope.launch {
-            val url = if (portfolioItem.value.ticker == ticker) {
+            val url = if (portfolioItem.value.sharesOwned > 0) {
                 "${URL}portfolio/UPDATE/${ticker}"
             } else {
                 "${URL}portfolio/ADD"
             }
-            val method = if (portfolioItem.value.ticker == ticker) {
+            val method = if (portfolioItem.value.sharesOwned > 0) {
                 Request.Method.PUT
             } else {
                 Request.Method.POST
             }
+            println(url)
             val price = portfolioItem.value.marketValue
             val share = portfolioItem.value.sharesOwned + number
             val total = portfolioItem.value.totalCost + price * number
             val avg = total / share
             val change = price - avg
-            val RequestBody = JSONObject().apply {
+            val jsonRequest = JSONObject().apply {
                 put("ticker", searchKey.value)
                 put("quantity", share)
                 put("avgshare", avg)
@@ -1110,7 +1142,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
             }
 //            PUT for update, Post for add
             val jsonObjectRequest = JsonObjectRequest(
-                method, url, RequestBody,
+                method, url, jsonRequest,
                 { response ->
                     // Update portfolioItems
                     portfolioItem.value = ResultPortfolio(ticker, sharesOwned = share, avgCostPerShare = avg, totalCost = total, change = change, marketValue = price, name =  portfolioItem.value.name)
@@ -1126,7 +1158,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
             queue.add(jsonObjectRequest)
         }
     }
-    fun SellStock(portfolioItem: MutableState<ResultPortfolio>, ticker: String, number: Int,  currentWalletBalance: MutableState<WalletBalance>) {
+    fun sellStock(portfolioItem: MutableState<ResultPortfolio>, ticker: String, number: Int, currentWalletBalance: MutableState<WalletBalance>) {
         coroutineScope.launch {
             val url = if (number < portfolioItem.value.sharesOwned) {
                 "${URL}portfolio/UPDATE/${ticker}"
@@ -1257,6 +1289,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
             fetchCompany(searchKey.value, context) { company ->
                 quote.value.name = company.name
                 portfolioItem.value.name = company.name
+                tickerInfo.value = TickerInfo(name =  company.name)
                 about.value.IPO = company.IPO
                 about.value.industry = company.industry
                 about.value.website = company.website
@@ -1332,10 +1365,10 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                 ) { trade ->
                     if (trade) {
                         Log.i("Trade", "Buy #${count.value} ${searchKey.value} ")
-                        BuyStock(portfolioItem = portfolioItem, ticker=searchKey.value, number =  count.value, currentWalletBalance = currentWalletBalance)
+                        buyStock(portfolioItem = portfolioItem, ticker=searchKey.value, number =  count.value, currentWalletBalance = currentWalletBalance)
                     } else {
                         Log.i("Trade", "Sell #${count.value} ${searchKey.value} ")
-                        SellStock(portfolioItem = portfolioItem, ticker=searchKey.value, number =  count.value, currentWalletBalance = currentWalletBalance)
+                        sellStock(portfolioItem = portfolioItem, ticker=searchKey.value, number =  count.value, currentWalletBalance = currentWalletBalance)
                     }
                 }
                 SuccessDialog(message = successMessage.value, context = context, showDialog = showSuccessMessage)
@@ -2062,7 +2095,7 @@ fun NewsScreen(newsArticles: List<NewsArticle>) {
     }
 }
 @Composable
-fun Header(fav: Boolean, searchKey: MutableState<String>, showSearchResult: MutableState<Boolean>, loading: MutableState<Boolean>, quote: MutableState<TickerInfo>){
+fun Header(fav: Boolean, searchKey: MutableState<String>, showSearchResult: MutableState<Boolean>, loading: MutableState<Boolean>, quote: MutableState<TickerInfo>, favorites: MutableState<List<FavoriteItem>>){
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     var inFav  by remember {
@@ -2077,7 +2110,7 @@ fun Header(fav: Boolean, searchKey: MutableState<String>, showSearchResult: Muta
     val addUrl = "${URL}watchlist/ADD"
 
     val addFavRequestBody = JSONObject().apply {
-        put("ticker", quote.value.ticker)
+        put("ticker", searchKey.value)
         put("name", quote.value.name)
     }
 
@@ -2092,6 +2125,7 @@ fun Header(fav: Boolean, searchKey: MutableState<String>, showSearchResult: Muta
                             duration = SnackbarDuration.Short
                         )
                         inFav = false
+                        favorites.value = favorites.value.filter { it.ticker != searchKey.value }
                     }
                 },
                 { error ->
@@ -2115,6 +2149,8 @@ fun Header(fav: Boolean, searchKey: MutableState<String>, showSearchResult: Muta
                             duration = SnackbarDuration.Short
                         )
                         inFav = true
+                        val newfavorites = favorites.value.toMutableList().apply { add(FavoriteItem(ticker = searchKey.value, name =  quote.value.name)) }
+                        favorites.value = newfavorites
                     }
                 },
                 { error ->
