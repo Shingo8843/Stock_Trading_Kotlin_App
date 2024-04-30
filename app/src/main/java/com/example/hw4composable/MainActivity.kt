@@ -109,7 +109,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 
 //{"country":"US","currency":"USD","estimateCurrency":"USD","exchange":"NASDAQ NMS - GLOBAL MARKET","finnhubIndustry":"Technology","ipo":"1980-12-12","logo":"https://static2.finnhub.io/file/publicdatany/finnhubimage/stock_logo/AAPL.png","marketCapitalization":2579411.77875,"name":"Apple Inc","phone":"14089961010","shareOutstanding":15441.88,"ticker":"AAPL","weburl":"https://www.apple.com/"}
-const val URL = "https://csci571hw3shingomorita8843v2.uw.r.appspot.com/api/"
+//http://localhost:8080/search/AAPL
+const val URL = "https://csci571hw4shingomorita8843.uw.r.appspot.com/api/"
 const val numNews = 20
 data class TickerInfo(
     val ticker: String = "",
@@ -531,7 +532,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                   timeNumber: 1,
                   timeUnit: "day",
                   fromDate: "2022-01-01",
-                  toDate: "2024-04-15",
+                  toDate: "2024-04-29",
                 });
                 console.log("Query Params", queryParams.toString());
                 console.log(`${URL}historical/${searchKey.value}?` + queryParams.toString());
@@ -771,8 +772,8 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                   const queryParams = new URLSearchParams({
                     timeNumber: 1,
                     timeUnit: "hour",
-                    fromDate: "2022-04-15",
-                    toDate: "2024-04-15",
+                    fromDate: "2022-04-29",
+                    toDate: "2024-04-29",
                   });
                   console.log("Query Params", queryParams.toString());
                   
