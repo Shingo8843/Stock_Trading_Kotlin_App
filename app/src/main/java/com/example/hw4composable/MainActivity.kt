@@ -66,11 +66,16 @@ import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -93,8 +98,19 @@ import androidx.compose.material3.DismissDirection
 import androidx.compose.material3.DismissValue
 import androidx.compose.material3.rememberDismissState
 import androidx.compose.material3.DismissState
+import androidx.compose.material3.contentColorFor
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.modifier.modifierLocalConsumer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+
 //{"country":"US","currency":"USD","estimateCurrency":"USD","exchange":"NASDAQ NMS - GLOBAL MARKET","finnhubIndustry":"Technology","ipo":"1980-12-12","logo":"https://static2.finnhub.io/file/publicdatany/finnhubimage/stock_logo/AAPL.png","marketCapitalization":2579411.77875,"name":"Apple Inc","phone":"14089961010","shareOutstanding":15441.88,"ticker":"AAPL","weburl":"https://www.apple.com/"}
 const val URL = "https://csci571hw3shingomorita8843v2.uw.r.appspot.com/api/"
+const val numNews = 20
 data class TickerInfo(
     val ticker: String = "",
     val name: String = "",
@@ -137,7 +153,7 @@ const val numberOfAllData = 6
 data class TabIcon(val iconResId: Int, val contentDescription: String)
 data class Stats(var open: Double = 0.00, var high: Double = 0.00, var low: Double = 0.00, var prev: Double = 0.00)
 data class About(var IPO: String = "", var  industry: String = "", var website: String = "", var name: String = "", var peers: List<String> = listOf(""))
-data class SocialSentiments(var totalMSPR: Double = 0.00, var posMSPR: Double = 0.00, var negMSPR : Double = 0.00, var totalChange: Double = 0.00, var posChange: Double = 0.00, var negChange: Double = 0.00)
+data class SocialSentiments(var totalMSPR: Double = 0.00, var posMSPR: Double = 0.00, var negMSPR : Double = 0.00, var totalChange: Double = 0.00, var posChange: Double = 0.00, var negChange: Double = 0.00, var name: String = "")
 data class ResultPortfolio(
     var ticker: String = "",
     var sharesOwned: Int = 0,
@@ -180,7 +196,7 @@ fun MyApp(){
     val coroutineScope = rememberCoroutineScope()
     var loading = remember {
         mutableStateOf(
-          false
+          true
         )
     }
     var query = remember {
@@ -223,11 +239,11 @@ fun MyApp(){
     }
     var watchlistReceived = false
     var portfolioReceived = false
-    fun updater(){
+    fun updater(balance:Double = 25000.00){
         val watchlistUrl = "${URL}watchlist/GET"
         val portfolioUrl = "${URL}portfolio/GET"
         val quoteUrl = "${URL}quote/"
-        val newWalletBalance = WalletBalance()
+        val newWalletBalance = WalletBalance(cashBalance = balance)
         val allTickers = mutableListOf<String>()
         fun updateLoadingState() {
             if (watchlistReceived && portfolioReceived) {
@@ -349,22 +365,25 @@ fun MyApp(){
                 }
 
                 Wallet(netWorth = currentWalletBalance.value.netWorth, cashBalance = currentWalletBalance.value.cashBalance)
+
+
                 LazyColumn {
-                    items(items = portfolioItems){
-                            item -> FavoriteCard(
-                                leftTop = item.ticker,
-                                rightTop = "$" + String.format("%.2f",item.totalCost),
-                                leftBottom = item.share.toString() + " shares",
-                                rightBottom = "$" + item.change.toString() + "(" + String.format("%.2f", item.changeP) + "%)",
-                                up = item.change > 0
-                    )
-                    {
-                                ticker ->
+                    items(items = portfolioItems) { item ->
+                        FavoriteCard(
+                            leftTop = item.ticker,
+                            rightTop = "$" + String.format("%.2f", item.totalCost),
+                            leftBottom = item.share.toString() + " shares",
+                            rightBottom = "$" + item.change.toString() + "(" + String.format(
+                                "%.2f",
+                                item.changeP
+                            ) + "%)",
+                            up = item.change > 0
+                        )
+                        { ticker ->
                             query.value = ticker
                             showSearchResult.value = true
+                        }
                     }
-                    }
-
                 }
                 Box(modifier = Modifier.background(color= Color(200,200,200))) {
                     Text(
@@ -375,7 +394,7 @@ fun MyApp(){
                     )
                 }
                 FavoritesList(favorites = favorites, query = query, showSearchResult = showSearchResult, context = context)
-                Footer()
+                Footer(context = context)
             }
         }
     }
@@ -448,11 +467,7 @@ fun onDeleteFavorite(ticker: String, context: Context, favorites: MutableState<L
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Background(dismissState: DismissState) {
-    val color = when (dismissState.dismissDirection) {
-        DismissDirection.StartToEnd -> MaterialTheme.colorScheme.errorContainer
-        DismissDirection.EndToStart -> MaterialTheme.colorScheme.errorContainer
-        null -> MaterialTheme.colorScheme.surfaceVariant
-    }
+    val color = Color.Red
 
     Box(
         modifier = Modifier
@@ -467,7 +482,7 @@ fun Background(dismissState: DismissState) {
         Icon(
             painter = painterResource(id = R.drawable.delete),
             contentDescription = "Delete",
-            tint = MaterialTheme.colorScheme.onErrorContainer
+            tint = Color.White
         )
     }
 }
@@ -606,7 +621,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                     enabled: false,
                   },
                   title: {
-                    text: historicalPrices.ticker + "Historical",
+                    text: historicalPrices.ticker + " Historical",
                   },
         
                   subtitle: {
@@ -771,7 +786,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                     });
                     const data = await response.json(); // Ensure that the JSON data is fully parsed before proceeding
                     if (data && data.results) {
-                      updateChart(data.results, ticker); // Then update the chart with this data
+                      updateChart(data.results.slice(0, 9), ticker); // Then update the chart with this data
                     } else {
                       console.error("No results found");
                       document.getElementById("container").innerHTML = "<div>No data available.</div>";
@@ -1036,8 +1051,8 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
     """
     var selectedTabIndex by remember { mutableStateOf(0) }
     val icons = listOf(
+        TabIcon(iconResId = R.drawable.chart_hour, contentDescription = "Hourly"),
         TabIcon(iconResId = R.drawable.chart_historical, contentDescription = "Historical"),
-        TabIcon(iconResId = R.drawable.chart_hour, contentDescription = "Hourly")
     )
     var newsArticles by remember {
         mutableStateOf(
@@ -1278,6 +1293,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                 quote.value.changeP = quotedata.changeP
                 quote.value.current = quotedata.current
                 portfolioItem.value.marketValue = quotedata.current
+                portfolioItem.value.change = quotedata.change
                 stats.value.high = quotedata.high
                 stats.value.low = quotedata.low
                 stats.value.open = quotedata.open
@@ -1289,6 +1305,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
             fetchCompany(searchKey.value, context) { company ->
                 quote.value.name = company.name
                 portfolioItem.value.name = company.name
+                socialSentiment.value.name = company.name
                 tickerInfo.value = TickerInfo(name =  company.name)
                 about.value.IPO = company.IPO
                 about.value.industry = company.industry
@@ -1309,31 +1326,41 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
 
         }
     }
-    Box(modifier = Modifier
+    Box(contentAlignment = Alignment.Center,
+            modifier = Modifier
         .fillMaxSize()
-        .fillMaxHeight()) {
-        Column(
-            modifier = Modifier.verticalScroll(enabled = true, state = scrollState)
         ) {
-            if (loaded == numberOfAllData) {
+        if (loaded < numberOfAllData) {      // Assuming numberOfAllData is the count of data you're expecting
+            CircularProgressIndicator()        // Show the loading indicator while data is loading
+        } else{
+            Column(
+                modifier = Modifier
+                    .verticalScroll(enabled = true, state = scrollState)
+                    .fillMaxSize()
+                    .fillMaxHeight()
+            ) {
+
                 ResultFav(
                     leftTop = quote.value.ticker,
-                    rightTop = quote.value.current.toString(),
+                    rightTop = "$" + quote.value.current.toString(),
                     leftBottom = quote.value.name,
-                    rightBottom = quote.value.change.toString() + "(" + String.format(
+                    rightBottom = "$"+quote.value.change.toString() + "(" + String.format(
                         "%.2f",
                         quote.value.changeP
-                    ) + "%)"
+                    ) + "%)",
+                    up = quote.value.change > 0
                 )
                 when (selectedTabIndex) {
-                    0 -> ComposeWebView(html = historicalHtml)
-                    1 -> ComposeWebView(html = hourlyhtml)
+                    0 -> ComposeWebView(html = hourlyhtml)
+                    1 -> ComposeWebView(html = historicalHtml )
                 }
                 TabRow(selectedTabIndex = selectedTabIndex) {
                     icons.forEachIndexed { index, tabIcon ->
                         Tab(
                             selected = selectedTabIndex == index,
                             onClick = { selectedTabIndex = index },
+                            selectedContentColor = Color.Blue,
+                            unselectedContentColor = Color.Black,
                             icon = {
                                 Icon(
                                     painter = painterResource(id = tabIcon.iconResId),
@@ -1343,19 +1370,19 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                         )
                     }
                 }
-                Text("Portfolio", style = MaterialTheme.typography.headlineLarge)
+                Text("  Portfolio", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 PortfolioResult(portfolioItem = portfolioItem.value) {
                     showTradeModal.value = true
                 }
-                Text("Stats", style = MaterialTheme.typography.headlineLarge)
+                Text("  Stats", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Statics(stats = stats.value)
-                Text("About", style = MaterialTheme.typography.headlineLarge)
+                Text("  About", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 AboutSection(about = about.value, searchKey=searchKey)
-                Text("Insight", style = MaterialTheme.typography.headlineLarge)
+                Text("  Insight", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 SocialSentimentSection(socialSentiments = socialSentiment.value)
                 ComposeWebView(html =recommendationhtml)
                 ComposeWebView(html = historicalEPShtml)
-                Text("News", style = MaterialTheme.typography.headlineLarge)
+                Text("  News", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 NewsScreen(newsArticles = newsArticles)
                 TradeDialog(
                     showDialog = showTradeModal,
@@ -1371,60 +1398,112 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                         sellStock(portfolioItem = portfolioItem, ticker=searchKey.value, number =  count.value, currentWalletBalance = currentWalletBalance)
                     }
                 }
-                SuccessDialog(message = successMessage.value, context = context, showDialog = showSuccessMessage)
-            } else {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier
-                    .fillMaxSize()
-                    .fillMaxHeight(), ) {
-                    CircularProgressIndicator()
+                SuccessDialog(message = successMessage.value, showDialog = showSuccessMessage)
+
+            }
+
+        }
+    }
+}
+@Composable
+fun ResultFav(leftTop: String, rightTop: String, leftBottom: String, rightBottom: String, up: Boolean = true) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = Color.White),
+    ) {
+        Row(){
+            Column(modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 5.dp,)
+                .weight(1f)) {
+                Row (modifier = Modifier
+                    .padding(horizontal = 32.dp)){
+                    Text(
+                        text = leftTop,
+                        modifier = Modifier.weight(1f),
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            fontSize = 18.sp
+                        )
+                    )
+                    Text(
+                        text = rightTop,
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            fontSize = 18.sp
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row (modifier = Modifier
+                    .padding(horizontal = 32.dp)){
+                    Text(
+                        text = leftBottom,
+                        modifier = Modifier.weight(1f) ,
+                        style = androidx.compose.ui.text.TextStyle(
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    )
+                    Row(modifier = Modifier, ){
+                        Icon( painter = if (up) painterResource(id = R.drawable.trending_up) else painterResource(id = R.drawable.trending_down) , contentDescription = "", tint = if (up) Color.Green else Color.Red)
+                        Text(text = rightBottom, style = androidx.compose.ui.text.TextStyle(
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 12.sp,
+                            color = if(up) Color.Green else Color.Red
+                        ))
+                    }
                 }
             }
         }
     }
 }
 @Composable
-fun ResultFav(leftTop: String, rightTop: String, leftBottom: String, rightBottom: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth(),
+fun SuccessDialog(message: String, showDialog: MutableState<Boolean>) {
+    if (showDialog.value) {
+        AlertDialog(
+            onDismissRequest = { showDialog.value = false },
+            title = { Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(all = 8.dp)
+                ,
+                contentAlignment = Alignment.Center
+            ){Text(text = "Congratulations!") }},
+            text = { Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                ,
+                contentAlignment = Alignment.Center
+            ){Text(text = message, textAlign = TextAlign.Center,)}},
+            confirmButton = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(all = 16.dp)
+                    ,
+                    contentAlignment = Alignment.Center
+                ) {
+                    Button(
+                        onClick = { showDialog.value = false },
+                        modifier = Modifier
 
-        ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row {
-                Text(text = leftTop, modifier = Modifier.weight(1f))
-                Text(text = rightTop)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row {
-                Text(text = leftBottom, modifier = Modifier.weight(1f))
-                Text(text = rightBottom)
-            }
-        }
-    }
-}
-@Composable
-fun SuccessDialog(message: String, context: Context, showDialog: MutableState<Boolean>){
-    if(showDialog.value){
-        if (showDialog.value) {
-            AlertDialog(
-                onDismissRequest = { showDialog.value = false },
-                title = { Text(text = "Congratulation!") },
-                text = {
-                    Text(text = message)
-                },
-                confirmButton = {
-
-                },
-                dismissButton = {
-                    Button(onClick = { showDialog.value = false }) {
-                        Text("Done")
+                            .fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(5.dp)) {
+                        Text("Done",color = Color.Green, fontWeight = FontWeight.Bold)
                     }
-                },
-                containerColor = Color(34,187,51),
-                titleContentColor = Color(255, 255, 255),
-                textContentColor = Color(255, 255, 255)
-            )
-        }
+                }
+            },
+
+            containerColor = Color(34, 187, 51),
+            titleContentColor = Color(255, 255, 255),
+            textContentColor = Color(255, 255, 255)
+        )
     }
 }
 @Composable
@@ -1434,67 +1513,122 @@ fun TradeDialog(showDialog: MutableState<Boolean>, currentWalletBalance: Mutable
 
     if (showDialog.value) {
         AlertDialog(
+            containerColor = Color.White,
             onDismissRequest = { showDialog.value = false },
-            title = { Text(text = "Trade ${portfolioItem.value.ticker} Shares") },
+            title = {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier
+                    .fillMaxWidth(1f)
+
+                ){
+                    Text(text = "Trade ${portfolioItem.value.name} Shares")
+                }
+
+                    },
             text = {
+                val numShares = inputText.value.toDoubleOrNull() ?: 0.0
+                val tradeCost = numShares * portfolioItem.value.marketValue
                 Column {
-                    TextField(
-                        value = inputText.value,
-                        onValueChange = { inputText.value = it.filter { char -> char.isDigit() || char == '.' } },
-                        label = { Text("Number of Shares") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                    val numShares = inputText.value.toDoubleOrNull() ?: 0.0
-                    val tradeCost = numShares * portfolioItem.value.marketValue
-                    Text("Total Cost: $tradeCost")
-                    Text("Cash Balance: ${currentWalletBalance.value.cashBalance}")
-                    Text("Your Shares: ${portfolioItem.value.sharesOwned}")
+
+                    Row (){
+                        Column (modifier =  Modifier.weight(1f)){
+                            TextField(
+                                value = inputText.value,
+                                onValueChange = { newValue ->
+                                    inputText.value = newValue.filter { char -> char.isDigit() || char == '.' }
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp)
+                                    .background(Color(0xFFE0E0E0), shape = RoundedCornerShape(4.dp)),
+                                textStyle = TextStyle(color = Color.Black, fontSize = 18.sp),
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedTextColor = Color.Black,
+                                    disabledTextColor = Color.Transparent,
+                                    focusedContainerColor = Color(255,255,255),
+                                    unfocusedContainerColor = Color.White,
+                                    focusedIndicatorColor = Color.Cyan,
+                                    unfocusedIndicatorColor = Color.Cyan,
+                                    disabledIndicatorColor = Color.Transparent
+                                ),
+                                placeholder = { Text(text = "0")}
+                            )
+                        }
+                        Column (modifier =  Modifier.align(Alignment.CenterVertically)){
+                            Text(text = "          shares")
+                        }
+
+                    }
+
+                    Box(contentAlignment = Alignment.CenterEnd, modifier = Modifier
+                        .fillMaxWidth(1f)
+                        .padding(vertical = 16.dp)
+                        ){
+                        Text(text = "${numShares}*${portfolioItem.value.marketValue}/share = ${tradeCost}")
+                    }
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier
+                        .fillMaxWidth(1f)
+                        ){
+                        Text(text = "$${String.format("%.2f", currentWalletBalance.value.cashBalance)} to Buy ${portfolioItem.value.ticker}", color=Color.Gray)
+                    }
                 }
             },
             confirmButton = {
-                // Buy Button
-                Button(
-                    onClick = {
-                        val numShares = inputText.value.toDoubleOrNull()
-                        when {
-                            numShares == null || numShares <= 0 -> {
-                                Toast.makeText(context, "Cannot buy non-positive shares", Toast.LENGTH_LONG).show()
-                            }
-                            numShares * portfolioItem.value.marketValue > currentWalletBalance.value.cashBalance -> {
-                                Toast.makeText(context, "Not enough money to buy", Toast.LENGTH_LONG).show()
-                            }
-                            else -> {
-                                count.value = numShares.toInt()
-                                onTradeCompletion(true)
-                                showDialog.value = false
-                            }
-                        }
+                Row(horizontalArrangement = Arrangement.SpaceAround,
+                    modifier = Modifier.fillMaxWidth()){
+
+                    Button(
+                        onClick = {
+                            val numShares = inputText.value.toIntOrNull()
+                            when {
+                                numShares == null ->{
+                                    Toast.makeText(context, "Please enter a valid amount", Toast.LENGTH_LONG).show()
+                                }
+                                numShares <= 0 -> {
+                                    Toast.makeText(context, "Cannot buy non-positive shares", Toast.LENGTH_LONG).show()
+                                }
+                                numShares * portfolioItem.value.marketValue > currentWalletBalance.value.cashBalance -> {
+                                    Toast.makeText(context, "Not enough money to buy", Toast.LENGTH_LONG).show()
+                                }
+                                else -> {
+                                    count.value = numShares.toInt()
+                                    onTradeCompletion(true)
+                                    showDialog.value = false
+                                }
+                            } },
+                        modifier = Modifier
+                            .padding(start = 16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                        shape = RoundedCornerShape(5.dp)
+                    ) {
+                        Text("BUY", color = Color.White, fontWeight = FontWeight.Bold)
                     }
-                ) {
-                    Text("BUY")
-                }
-            },
-            dismissButton = {
-                // Sell button
-                Button(
-                    onClick = {
-                        val numShares = inputText.value.toDoubleOrNull()
-                        when {
-                            numShares == null || numShares <= 0 -> {
-                                Toast.makeText(context, "Cannot sell non-positive shares", Toast.LENGTH_LONG).show()
-                            }
-                            numShares > portfolioItem.value.sharesOwned -> {
-                                Toast.makeText(context, "Not enough shares to sell", Toast.LENGTH_LONG).show()
-                            }
-                            else -> {
-                                count.value = numShares.toInt()
-                                onTradeCompletion(false) // Signal a sell operation
-                                showDialog.value = false
-                            }
-                        }
+                    Button(
+                        onClick = { val numShares = inputText.value.toIntOrNull()
+                            when {
+                                numShares == null ->{
+                                    Toast.makeText(context, "Please enter a valid amount", Toast.LENGTH_LONG).show()
+                                }
+                                numShares <= 0 -> {
+                                    Toast.makeText(context, "Cannot sell non-positive shares", Toast.LENGTH_LONG).show()
+                                }
+                                numShares > portfolioItem.value.sharesOwned -> {
+                                    Toast.makeText(context, "Not enough shares to sell", Toast.LENGTH_LONG).show()
+                                }
+                                else -> {
+                                    count.value = numShares.toInt()
+                                    onTradeCompletion(false) // Signal a sell operation
+                                    showDialog.value = false
+                                }
+                            } },
+                        modifier = Modifier
+                            .padding(start = 16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                        shape = RoundedCornerShape(5.dp)
+                    ) {
+                        Text("SELL", color = Color.White, fontWeight = FontWeight.Bold)
                     }
-                ) {
-                    Text("SELL")
                 }
             }
         )
@@ -1504,36 +1638,55 @@ fun TradeDialog(showDialog: MutableState<Boolean>, currentWalletBalance: Mutable
 fun SocialSentimentSection(socialSentiments: SocialSentiments) {
     Box(
         modifier = Modifier
-            .padding(8.dp)
-            .fillMaxWidth(),
+            .padding(horizontal = 32.dp)
+            .fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Text("Social Sentiments", style = MaterialTheme.typography.headlineSmall)
-
-            Divider(Modifier.padding(vertical = 4.dp))
-
-            Row(Modifier.fillMaxWidth()) {
-                Text("Apple Inc", Modifier.weight(1f))
-                Text("MSRP")
-                Spacer(Modifier.width(16.dp))
-                Text("Change")
+        Column {
+            Box(modifier = Modifier
+                .padding(vertical = 32.dp)
+                .fillMaxWidth(), contentAlignment = Alignment.Center){
+                Text("Social Sentiments", style = MaterialTheme.typography.titleLarge)
             }
-
-            Divider(Modifier.padding(vertical = 4.dp))
-
-            SocialSentimentRow("Total", socialSentiments.totalMSPR, socialSentiments.totalChange)
-            SocialSentimentRow("Positive", socialSentiments.posMSPR, socialSentiments.posChange)
-            SocialSentimentRow("Negative", socialSentiments.negMSPR, socialSentiments.negChange)
+            Column(){
+                Row() {
+                    Text(socialSentiments.name,
+                        Modifier
+                            .weight(1f)
+                            .background(color = Color(222, 222, 222)))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("MSRP", Modifier
+                        .weight(1f)
+                        .background(color = Color(222, 222, 222)))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("Change", Modifier
+                        .weight(1f)
+                        .background(color = Color(222, 222, 222)))
+                }
+                SocialSentimentRow("Total", socialSentiments.totalMSPR, socialSentiments.totalChange)
+                SocialSentimentRow("Positive", socialSentiments.posMSPR, socialSentiments.posChange)
+                SocialSentimentRow("Negative", socialSentiments.negMSPR, socialSentiments.negChange)
+            }
         }
     }
 }
 @Composable
 fun SocialSentimentRow(label: String, mspr: Double, change: Double) {
+    Divider(
+        color = Color.White,
+        thickness = 3.dp
+    )
     Row(Modifier.fillMaxWidth()) {
-        Text(label, Modifier.weight(1f))
-        Text("%.2f".format(mspr))
-        Spacer(Modifier.width(16.dp))
-        Text("%.0f".format(change))
+        Text(label, Modifier
+            .weight(1f)
+            .background(color = Color(222, 222, 222)))
+        Spacer(modifier = Modifier.width(3.dp))
+        Text("%.2f".format(mspr), Modifier
+            .weight(1f)
+            .background(color = Color(240, 240, 240)))
+        Spacer(modifier = Modifier.width(3.dp))
+        Text("%,.0f".format(change), Modifier
+            .weight(1f)
+            .background(color = Color(240, 240, 240)))
     }
 }
 @Composable
@@ -1542,21 +1695,26 @@ fun Statics(stats: Stats){
         .fillMaxWidth()
         .padding(8.dp),) {
         Row {
-            Column {
-                Text(text = "Open Price: $")
-                Text(text = "High Price: $")
+            Column(modifier = Modifier
+                .padding(8.dp)) {
+                Text(text = "Open Price: ")
+                Text(text = "High Price: ")
             }
-            Column {
-                Text(text = stats.open.toString())
-                Text(text = stats.high.toString())
+            Column(modifier = Modifier
+                .padding(vertical = 8.dp)) {
+                Text(text = "$"+stats.open.toString())
+                Text(text = "$"+stats.high.toString())
             }
-            Column {
-                Text(text = "Low Price: $")
-                Text(text = "Prev. Price: $")
+            Spacer(modifier = Modifier.weight(1f))
+            Column(modifier = Modifier
+                .padding(vertical = 8.dp)) {
+                Text(text = "Low Price: ")
+                Text(text = "Prev. Price: ")
             }
-            Column {
-                Text(text = stats.low.toString())
-                Text(text = stats.prev.toString())
+            Column(modifier = Modifier
+                .padding(8.dp)) {
+                Text(text = "$"+stats.low.toString())
+                Text(text = "$"+stats.prev.toString())
             }
         }
     }
@@ -1589,10 +1747,10 @@ fun AboutSection(about: About, searchKey: MutableState<String>){
         .padding(8.dp),){
         Row{
             Column {
-                Text(text = "IPO Start Date")
-                Text(text = "Industry")
-                Text(text = "Webpage")
-                Text(text = "Company Peers")
+                Text(text = "IPO Start Date    ")
+                Text(text = "Industry          ")
+                Text(text = "Webpage           ")
+                Text(text = "Company Peers     ")
             }
             Column {
                 Text(text = about.IPO)
@@ -1609,18 +1767,30 @@ fun AboutSection(about: About, searchKey: MutableState<String>){
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
-                ClickableText(
-                    text = annotatedString,
-                    onClick = { offset ->
-                        // Retrieve the annotations at the click position
-                        annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                            .firstOrNull()?.let { annotation ->
-                                // Use the annotation as the peer ticker symbol
-
-                                onClickPeer(annotation.item, searchKey)
+                LazyRow(modifier = Modifier.fillMaxWidth()) {
+                    itemsIndexed(about.peers) { index, peer ->
+                        val annotatedString = buildAnnotatedString {
+                            pushStringAnnotation(tag = "URL", annotation = peer)
+                            withStyle(style = SpanStyle(color = Color.Blue, textDecoration = TextDecoration.Underline)) {
+                                append(peer)
                             }
+                            pop()
+                        }
+                        ClickableText(
+                            text = annotatedString,
+                            onClick = { offset ->
+                                annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                                    .firstOrNull()?.let { annotation ->
+                                        // Trigger your desired action here
+                                        onClickPeer(annotation.item, searchKey)
+                                    }
+                            }
+                        )
+                        if (index < about.peers.size - 1) {
+                            Text(text = ", ", modifier = Modifier.padding(end = 8.dp))
+                        }
                     }
-                )
+                }
             }
         }
     }
@@ -1632,40 +1802,56 @@ fun onClickPeer(peer: String, searchKey: MutableState<String>){
     Log.i("Peers", "Clicked on $peer")
 }
 @Composable
-fun PortfolioResult(portfolioItem: ResultPortfolio, onTradeClick: () -> Unit){
-    Box(
+fun PortfolioResult(portfolioItem: ResultPortfolio, onTradeClick: () -> Unit) {
+    val change = portfolioItem.totalCost - portfolioItem.marketValue*portfolioItem.sharesOwned
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(16.dp)
     ) {
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.Start
-        ) {
-
-            Text("Shares Owned: ${portfolioItem.sharesOwned}")
-            Text("Avg. Cost / Share: $${String.format("%.2f", portfolioItem.avgCostPerShare)}")
-            Text("Total Cost: $${String.format("%.2f", portfolioItem.totalCost)}")
-            Text("Change: $${String.format("%.2f", portfolioItem.avgCostPerShare - portfolioItem.marketValue)}")
-            Text("Market Value: $${String.format("%.2f", portfolioItem.marketValue)}")
-            Button(
-                onClick = { onTradeClick() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                Text("TRADE")
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Shares Owned:")
+            Text("Avg. Cost/Share:")
+            Text("Total Cost:")
+            Text("Change:")
+            Text("Market Value:")
+        }
+        if(portfolioItem.sharesOwned > 0){
+            Column(modifier = Modifier.weight(1f)) {
+                Text("${portfolioItem.sharesOwned}")
+                Text("$${String.format("%.2f", portfolioItem.avgCostPerShare)}")
+                Text("$${String.format("%.2f", portfolioItem.totalCost)}")
+                Text("$${String.format("%.2f", change)}", color = if(change > 0)  Color.Green else if(change == 0.0) Color.Black else Color.Red)
+                Text("$${String.format("%.2f", portfolioItem.marketValue*portfolioItem.sharesOwned)}", color = if(change> 0)  Color.Green else if(change == 0.0) Color.Black else Color.Red)
             }
         }
+        else{
+            Column(modifier = Modifier.weight(1f)) {
+                Text("0")
+                Text("$0.00")
+                Text("$0.00")
+                Text("$0.00")
+                Text("$0.00")
+            }
+        }
+
+//        Spacer(modifier = Modifier.weight(1f))
+        Button(
+            onClick = { onTradeClick() },
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .padding(start = 16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text("TRADE", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+
     }
 }
 fun fetchNewsArticles(ticker: String, context: Context, onSuccess: (List<NewsArticle>) -> Unit) {
     val queue: RequestQueue = Volley.newRequestQueue(context)
     val url = "${URL}news/$ticker"
-
     val jsonArrayRequest = JsonArrayRequest(
         Request.Method.GET, url, null,
         { response ->
@@ -1676,7 +1862,6 @@ fun fetchNewsArticles(ticker: String, context: Context, onSuccess: (List<NewsArt
                     if (articleJson.getString("image").isNotEmpty()) {
                         val datetime = articleJson.getLong("datetime")
                         val publishedDate = Instant.ofEpochSecond(datetime).atZone(ZoneId.systemDefault()).toLocalDateTime()
-
                         val newsArticle = NewsArticle(
                             title = articleJson.getString("headline"),
                             source = articleJson.getString("source"),
@@ -1686,7 +1871,7 @@ fun fetchNewsArticles(ticker: String, context: Context, onSuccess: (List<NewsArt
                             url = articleJson.getString("url")
                         )
                         newsArticles.add(newsArticle)
-                        if (newsArticles.size == 5) break
+                        if (newsArticles.size == numNews) break
                     }
                 }
 
@@ -1697,11 +1882,8 @@ fun fetchNewsArticles(ticker: String, context: Context, onSuccess: (List<NewsArt
         },
         { error ->
             error.printStackTrace()
-            // Handle error - Could invoke an error callback here
         }
     )
-
-    // Add the request to the RequestQueue
     queue.add(jsonArrayRequest)
 }
 fun fetchQuote(ticker: String, context: Context, onSuccess: (FavoriteItem) -> Unit){
@@ -2024,13 +2206,27 @@ fun NewsDialog(newsArticle: NewsArticle, onDismissRequest: () -> Unit) {
                     .padding(16.dp)
             ) {
                 Text(
-                    text = newsArticle.title,
-                    style = MaterialTheme.typography.headlineMedium,
+                    text = newsArticle.source,
+                    style = MaterialTheme.typography.headlineSmall,
                     color = Color.Black,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
+                Text(
+                    text = newsArticle.publishedDate.format(DateTimeFormatter.ofPattern("MMMM d, yyyy")),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.LightGray,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
                 Divider(color = Color.LightGray, thickness = 1.dp)
+                Text(
+                    text = newsArticle.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
                 Text(
                     text = newsArticle.description,
                     style = MaterialTheme.typography.bodyMedium,
@@ -2309,7 +2505,7 @@ fun SearchBarUI( searchKey: MutableState<String>, showSearchResult: MutableState
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { isSearchActive = true }
+
                 .shadow(1.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -2317,14 +2513,17 @@ fun SearchBarUI( searchKey: MutableState<String>, showSearchResult: MutableState
                 text = "Stocks",
                 modifier = Modifier
                     .weight(1f)
-                    .padding(16.dp)
-
-
+                    .padding(16.dp),
+                style = TextStyle(
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                    fontSize = 18.sp
+                )
             )
             Icon(
                 imageVector = Icons.Filled.Search,
                 contentDescription = "Search",
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier.padding(16.dp).clickable { isSearchActive = true }
             )
         }
     }
@@ -2369,7 +2568,7 @@ fun Wallet(netWorth: Double, cashBalance: Double){
         }
         Row (modifier = Modifier){
             Text(
-                text = "$"+ String.format("%.2f", netWorth),
+                text = "$"+ String.format("%.2f", netWorth+cashBalance),
                 modifier = Modifier.weight(1f),
                 style = androidx.compose.ui.text.TextStyle(
                 fontWeight = FontWeight.Bold,
@@ -2447,11 +2646,12 @@ fun FavoriteCard(leftTop: String, rightTop: String, leftBottom: String, rightBot
     Divider(color = Color.Gray, thickness = 1.dp)
 }
 @Composable
-fun Footer() {
+fun Footer(context: Context) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(16.dp)
+            .clickable { openUrl("https://finnhub.io/", context) },
         contentAlignment = Alignment.Center
     ) {
         Text(text = "Powered by Finnhub", color = Color(128, 128, 128))
@@ -2460,7 +2660,11 @@ fun Footer() {
 @Preview(showBackground = true)
 @Composable
 fun HomePreview() {
+
     HW4ComposableTheme {
+//        var socialSentiments = SocialSentiments(name ="Apple")
+//        SocialSentimentSection(socialSentiments = socialSentiments)
+//        SuccessDialog(message = successMessage, showDialog = showSuccessMessage)
         MyApp()
     }
 }
