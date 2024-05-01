@@ -112,6 +112,7 @@ import androidx.compose.ui.text.style.TextAlign
 //http://localhost:8080/search/AAPL
 const val URL = "https://csci571hw4shingomorita8843.uw.r.appspot.com/api/"
 const val numNews = 20
+const val toDate = "2024-04-30"
 data class TickerInfo(
     val ticker: String = "",
     val name: String = "",
@@ -238,6 +239,14 @@ fun MyApp(){
             )
         )
     }
+    var tickersFetched = remember {
+        mutableSetOf<String>()
+    }
+    var totalBalance = remember {
+        mutableStateOf(
+            25000.00
+        )
+    }
     var watchlistReceived = false
     var portfolioReceived = false
     fun updater(balance:Double = 25000.00){
@@ -245,9 +254,11 @@ fun MyApp(){
         val portfolioUrl = "${URL}portfolio/GET"
         val quoteUrl = "${URL}quote/"
         val newWalletBalance = WalletBalance(cashBalance = balance)
-        val allTickers = mutableListOf<String>()
+        val allTickers = mutableSetOf<String>()
+
         fun updateLoadingState() {
             if (watchlistReceived && portfolioReceived) {
+
                 allTickers.forEach { ticker ->
                     val quoteUrl = "${quoteUrl}$ticker"
                     val quoteRequest = JsonObjectRequest(Request.Method.GET, quoteUrl, null,
@@ -258,7 +269,8 @@ fun MyApp(){
                             portfolioItems = portfolioItems.map {
                                 if (it.ticker == ticker) it.copy(
                                     change = change,
-                                    changeP = changePercentage
+                                    changeP = changePercentage,
+                                    current = currentPrice,
                                 ) else it
                             }
                             favorites.value = favorites.value.map {
@@ -267,6 +279,14 @@ fun MyApp(){
                                     change = change,
                                     changeP = changePercentage
                                 ) else it
+                            }
+                            tickersFetched.add(ticker)
+                            if (tickersFetched.size == allTickers.size) {
+                                newWalletBalance.netWorth = portfolioItems.sumOf { it.share * it.current }
+                                totalBalance.value = newWalletBalance.netWorth + newWalletBalance.cashBalance
+                                currentWalletBalance.value = newWalletBalance
+                                tickersFetched.clear() // Reset the set for future updates
+                                Log.i("Wallet", "Wallet Balance Updated: ${currentWalletBalance.value.netWorth}, ${currentWalletBalance.value.cashBalance}")
                             }
                         },
                         { error ->
@@ -290,11 +310,11 @@ fun MyApp(){
                         changeP = 0.0
                     ))
                     allTickers += item.getString("ticker")
-                    newWalletBalance.netWorth += item.getDouble("avgshare") * item.getInt("quantity")
+
                     newWalletBalance.cashBalance -= item.getDouble("avgshare") * item.getInt("quantity")
                 }
                 portfolioItems = portfolioList
-                currentWalletBalance.value = newWalletBalance
+
                 portfolioReceived = true
                 updateLoadingState()
             },
@@ -330,7 +350,7 @@ fun MyApp(){
         queue.add(watchlistRequest)
     }
     PeriodicUpdateEffect(onTick = {
-        updater()
+        updater(totalBalance.value)
         println("Home Periodic update triggered")
     })
     LaunchedEffect(query.value) {
@@ -532,7 +552,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                   timeNumber: 1,
                   timeUnit: "day",
                   fromDate: "2022-01-01",
-                  toDate: "2024-04-29",
+                  toDate: "$toDate",
                 });
                 console.log("Query Params", queryParams.toString());
                 console.log(`${URL}historical/${searchKey.value}?` + queryParams.toString());
@@ -772,8 +792,8 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                   const queryParams = new URLSearchParams({
                     timeNumber: 1,
                     timeUnit: "hour",
-                    fromDate: "2022-04-29",
-                    toDate: "2024-04-29",
+                    fromDate: "$toDate",
+                    toDate: "$toDate",
                   });
                   console.log("Query Params", queryParams.toString());
                   
@@ -855,23 +875,23 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
             <script src="https://code.highcharts.com/stock/modules/data.js"></script>
             <script src="https://code.highcharts.com/stock/modules/drag-panes.js"></script>
             <script src="https://code.highcharts.com/stock/modules/exporting.js"></script>
-            <script src="https://code.highcharts.com/stock/indicators/indicators.js"></script>
-            <script src="https://code.highcharts.com/stock/indicators/volume-by-price.js"></script>
             <script src="https://code.highcharts.com/modules/accessibility.js"></script>
-            <script src="https://code.highcharts.com/modules/sma.js"></script>
           </head>
           <body>
             <div id="container" style="width: 100%; height: 400px"></div>
             <script>
               async function fetchAndDisplayRecommendations() {
-                const URL = "https://csci571hw3shingomorita8843v2.uw.r.appspot.com/api/";
-                const ticker = "AAPL";
+                const URL =
+                  "https://csci571hw3shingomorita8843v2.uw.r.appspot.com/api/";
+                const ticker = "AAPL"; // Example ticker, adjust as needed
         
                 try {
                   const response = await fetch(`${URL}recommendation/${searchKey.value}`);
                   const recommendationTrend = await response.json();
         
-                  const categories = recommendationTrend.map((item) => item.period).reverse();
+                  const categories = recommendationTrend
+                    .map((item) => item.period)
+                    .reverse();
                   const recommendationTrendData = {
                     "Strong Buy": recommendationTrend.map((item) => item.strongBuy),
                     Buy: recommendationTrend.map((item) => item.buy),
@@ -881,14 +901,27 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                   };
         
                   Highcharts.chart("container", {
-                    chart: { type: "column", backgroundColor: "#f4f4f4" },
+                    chart: { type: "column" },
                     title: { text: "Recommendation Trends" },
                     xAxis: { categories: categories },
-                    yAxis: { min: 0, title: { text: "Number of Analysts" } },
+                    yAxis: {
+                      min: 0,
+                      title: { text: "#Analysis" },
+                      stackLabels: {
+                        enabled: true,
+                        style: {
+                          fontWeight: "bold",
+                          color:
+                            (Highcharts.defaultOptions.title.style &&
+                              Highcharts.defaultOptions.title.style.color) ||
+                            "gray",
+                        },
+                      },
+                    },
                     tooltip: {
+                      headerFormat: "<b>{point.x}</b><br/>",
                       pointFormat:
-                        '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> ({point.percentage:.0f}%)<br/>',
-                      shared: true,
+                        "{series.name}: {point.y}<br/>Total: {point.stackTotal}",
                       useHTML: true,
                     },
                     plotOptions: {
@@ -897,8 +930,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                         pointPadding: 0.2,
                         borderWidth: 0,
                         dataLabels: {
-                          enabled: true,
-                          color: "black",
+                          enabled: false,
                         },
                       },
                     },
@@ -932,7 +964,8 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                   });
                 } catch (error) {
                   console.error("Failed to fetch recommendation data:", error);
-                  document.getElementById("container").innerHTML = "<div>Error loading data.</div>";
+                  document.getElementById("container").innerHTML =
+                    "<div>Error loading data.</div>";
                 }
               }
         
@@ -940,6 +973,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
             </script>
           </body>
         </html>
+
 
     """
     val historicalEPShtml = """
@@ -996,7 +1030,7 @@ fun ResultScreen(searchKey: MutableState<String>, currentWalletBalance: MutableS
                   Highcharts.chart("container", {
                     chart: {
                       type: "spline",
-                      backgroundColor: "#f4f4f4",
+                      
                     },
                     title: {
                       text: "Historical EPS Surprises",
@@ -1566,7 +1600,10 @@ fun TradeDialog(showDialog: MutableState<Boolean>, currentWalletBalance: Mutable
                         .fillMaxWidth(1f)
                         .padding(vertical = 16.dp)
                         ){
-                        Text(text = "${numShares}*${portfolioItem.value.marketValue}/share = ${tradeCost}")
+                        Text(text = "${numShares}*${portfolioItem.value.marketValue}/share = ${String.format(
+                            "%.2f",
+                            tradeCost
+                        )}")
                     }
                     Box(contentAlignment = Alignment.Center, modifier = Modifier
                         .fillMaxWidth(1f)
@@ -1703,6 +1740,7 @@ fun Statics(stats: Stats){
             }
             Column(modifier = Modifier
                 .padding(vertical = 8.dp)) {
+
                 Text(text = "$"+stats.open.toString())
                 Text(text = "$"+stats.high.toString())
             }
@@ -2524,7 +2562,9 @@ fun SearchBarUI( searchKey: MutableState<String>, showSearchResult: MutableState
             Icon(
                 imageVector = Icons.Filled.Search,
                 contentDescription = "Search",
-                modifier = Modifier.padding(16.dp).clickable { isSearchActive = true }
+                modifier = Modifier
+                    .padding(16.dp)
+                    .clickable { isSearchActive = true }
             )
         }
     }
